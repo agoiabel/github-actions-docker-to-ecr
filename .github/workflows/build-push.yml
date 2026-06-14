@@ -62,7 +62,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.ECR_REPOSITORY_URL }}
+          images: ${{ secrets.ECR_REPOSITORY }}
           tags: |
             type=raw,value=main-${{ steps.slug.outputs.sha }}
             type=raw,value=${{ steps.slug.outputs.sha }}
@@ -84,8 +84,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             GIT_COMMIT=${{ github.sha }}
-          cache-from: type=registry,ref=${{ secrets.ECR_REPOSITORY_URL }}:buildcache
-          cache-to: type=registry,ref=${{ secrets.ECR_REPOSITORY_URL }}:buildcache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
 
       # ── 8. Print summary ─────────────────────────────────────────────────────
