@@ -1,0 +1,11 @@
+.git
+.github
+.gitignore
+.dockerignore
+node_modules
+npm-debug.log*
+terraform
+*.md
+.env
+.env.*
+.DS_Store

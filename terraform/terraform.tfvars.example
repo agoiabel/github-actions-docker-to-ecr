@@ -1,0 +1,5 @@
+aws_region  = "us-east-1"
+environment = "staging"       # or "production" — must match the -backend-config file used at init
+app_name    = "ecr-demo"
+github_org  = "your-github-username"
+github_repo = "your-repo-name"
