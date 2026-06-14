@@ -8,10 +8,7 @@ terraform {
     }
   }
 
-  # Partial backend — supply the rest at init time:
-  #   terraform init -backend-config=backend.staging.hcl
-  #   terraform init -backend-config=backend.production.hcl
-  backend "s3" {}
+  # No backend block — state is stored locally in terraform.tfstate (gitignored)
 }
 
 provider "aws" {
@@ -26,9 +23,8 @@ provider "aws" {
   }
 }
 
-# ── ECR repository ─────────────────────────────────────────────────────────────
 module "ecr" {
-  source = "./modules/ecr"
+  source = "../modules/ecr"
 
   repository_name      = "${var.app_name}-${var.environment}"
   image_tag_mutability = "IMMUTABLE"
@@ -38,9 +34,8 @@ module "ecr" {
   }
 }
 
-# ── OIDC + IAM role for GitHub Actions ────────────────────────────────────────
 module "iam_oidc" {
-  source = "./modules/iam_oidc"
+  source = "../modules/iam_oidc"
 
   github_org          = var.github_org
   github_repo         = var.github_repo

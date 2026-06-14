@@ -16,7 +16,8 @@ git push → GitHub Actions → docker build → ECR push
 2. [Docker workflow](#docker-workflow)
 3. [Terraform](#terraform)
 4. [Environments (staging / production)](#environments)
-5. [Troubleshooting](#troubleshooting)
+5. [GitHub repository setup](#github-repository-setup)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -30,15 +31,21 @@ git push → GitHub Actions → docker build → ECR push
 ├── .github/workflows/
 │   └── build-push.yml                # CI pipeline
 └── terraform/
-    ├── main.tf                       # Root module — provider + backend
-    ├── variables.tf
-    ├── outputs.tf
-    ├── terraform.tfvars              # gitignored — your local values
-    ├── terraform.tfvars.example      # committed template
-    ├── backend.staging.hcl           # S3 backend config for staging
-    ├── backend.production.hcl        # S3 backend config for production (with lock)
-    ├── ecr/                          # ECR repository + lifecycle policy
-    └── iam_oidc/                     # OIDC provider + IAM role for GitHub Actions
+    ├── modules/
+    │   ├── ecr/                      # ECR repository + lifecycle policy
+    │   └── iam_oidc/                 # OIDC provider + IAM role for GitHub Actions
+    ├── staging/
+    │   ├── main.tf                   # No backend — local state
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   ├── terraform.tfvars          # gitignored — your local values
+    │   └── terraform.tfvars.example  # committed template
+    └── production/
+        ├── main.tf                   # backend "s3" {}
+        ├── variables.tf
+        ├── outputs.tf
+        ├── backend.production.hcl    # S3 config — update bucket name before use
+        └── terraform.tfvars.example  # committed template
 ```
 
 ---
@@ -110,18 +117,18 @@ ECR automatically cleans up old images:
 
 - Terraform >= 1.10.0
 - AWS CLI configured (`aws configure` or environment variables)
-- An S3 bucket for remote state (update `bucket` in the `.hcl` files below)
+- An S3 bucket is only required for **production**
 
 ### Modules
 
-**`ecr/`** — creates the ECR repository
+**`modules/ecr/`** — creates the ECR repository
 
 | Resource | What it does |
 |---|---|
 | `aws_ecr_repository` | Repository with AES-256 encryption + scan on push |
 | `aws_ecr_lifecycle_policy` | Auto-deletes old images (see policy above) |
 
-**`iam_oidc/`** — creates keyless auth for GitHub Actions
+**`modules/iam_oidc/`** — creates keyless auth for GitHub Actions
 
 | Resource | What it does |
 |---|---|
@@ -134,34 +141,32 @@ ECR automatically cleans up old images:
 **1. Copy and fill in your variables:**
 
 ```bash
-cp terraform/terraform.tfvars.example terraform/terraform.tfvars
-# Edit terraform.tfvars — set your github_org, github_repo, etc.
-```
-
-**2. Update the backend bucket name** in the environment `.hcl` file you want to use:
-
-```bash
-# terraform/backend.staging.hcl  (or backend.production.hcl)
-bucket = "your-actual-s3-bucket-name"
-```
-
-**3. Initialise and apply:**
-
-```bash
-cd terraform
-
 # Staging
-terraform init -backend-config=backend.staging.hcl
+cp terraform/staging/terraform.tfvars.example terraform/staging/terraform.tfvars
+# Edit: set aws_region, github_org, github_repo
+
+# Production (when ready)
+cp terraform/production/terraform.tfvars.example terraform/production/terraform.tfvars
+# Also update bucket in terraform/production/backend.production.hcl
+```
+
+**2. Initialise and apply:**
+
+```bash
+# Staging — local state, no S3 bucket needed
+cd terraform/staging
+terraform init
 terraform plan
 terraform apply
 
-# Production
+# Production — S3 state with locking
+cd terraform/production
 terraform init -backend-config=backend.production.hcl
 terraform plan
 terraform apply
 ```
 
-**4. Note the outputs** — you need these to configure GitHub Actions:
+**3. Note the outputs** — you need these to configure GitHub Actions:
 
 ```
 ecr_repository_url      = 123456789.dkr.ecr.us-east-1.amazonaws.com/ecr-demo-staging
@@ -191,12 +196,55 @@ environment = "staging"    # or "production"
 
 | | Staging | Production |
 |---|---|---|
-| State key | `ecr-demo/staging/terraform.tfstate` | `ecr-demo/production/terraform.tfstate` |
-| S3 native lock | No | Yes (`use_lockfile = true`) |
+| Working directory | `terraform/staging/` | `terraform/production/` |
+| Init command | `terraform init` | `terraform init -backend-config=backend.production.hcl` |
+| State storage | Local (`terraform.tfstate`) | S3 (`ecr-demo/production/terraform.tfstate`) |
+| S3 bucket required | No | Yes |
+| State locking | No | Yes — S3 native (`use_lockfile = true`) |
 | ECR repo name | `ecr-demo-staging` | `ecr-demo-production` |
 | IAM role name | `ecr-demo-github-actions-staging` | `ecr-demo-github-actions-production` |
 
 S3 native locking (Terraform >= 1.10) writes a `.tflock` object in your bucket instead of using DynamoDB — no extra table required.
+
+> **Note:** the local `terraform.tfstate` file produced by staging is gitignored. Never commit it.
+
+---
+
+## GitHub repository setup
+
+These steps must be done manually in the GitHub UI after running `terraform apply`. The workflow will fail until they are in place.
+
+### 1. Actions permissions
+
+Go to **Settings → Actions → General → Workflow permissions** and select:
+
+> **Read and write permissions**
+
+This is required for the workflow to request an OIDC token (`id-token: write`). Without it, GitHub will refuse to issue the token and the AWS credential step will fail.
+
+### 2. Secrets
+
+Go to **Settings → Secrets and variables → Actions → New repository secret** and add the following. Values come from `terraform output` after applying.
+
+| Secret name | Where to get the value |
+|---|---|
+| `AWS_ROLE_ARN` | `terraform output github_actions_role_arn` |
+| `ECR_REPOSITORY` | `terraform output ecr_repository_url` |
+| `AWS_REGION` | The region you set in `terraform.tfvars` (e.g. `us-east-1`) |
+
+To print all three at once:
+
+```bash
+# From terraform/staging or terraform/production
+terraform output github_actions_role_arn
+terraform output ecr_repository_url
+```
+
+> Secrets are environment-specific. If you run both staging and production, add a separate secret set for each using GitHub's [Environments](https://docs.github.com/en/actions/deployment/targeting-different-deployment-environments) feature, or suffix the secret names (e.g. `AWS_ROLE_ARN_STAGING`, `AWS_ROLE_ARN_PRODUCTION`) and reference them explicitly in the workflow.
+
+### 3. Verify the setup
+
+Once secrets are added, push a commit to `main`. In the **Actions** tab you should see the workflow run and succeed. The pushed image will appear in the ECR console under the repository name printed by `terraform output ecr_repository_url`.
 
 ---
 
@@ -263,10 +311,14 @@ The IAM policy only attaches ECR push permissions. Check:
 
 **`Error: Backend configuration changed`**
 
-Switching between `backend.staging.hcl` and `backend.production.hcl` requires a re-init:
+Each environment is its own directory with its own `.terraform` cache — they should never conflict. If you see this, you may be running `terraform` from the wrong directory. Confirm with `pwd` and re-init:
 
 ```bash
-terraform init -reconfigure -backend-config=backend.production.hcl
+# Staging
+cd terraform/staging && terraform init
+
+# Production
+cd terraform/production && terraform init -backend-config=backend.production.hcl
 ```
 
 **`Error: state lock`** (production only)
@@ -320,6 +372,11 @@ terraform apply -refresh-only   # pull drift into state without changing infra
 **Destroy a single environment**
 
 ```bash
-terraform init -backend-config=backend.staging.hcl
+# Staging
+cd terraform/staging && terraform destroy
+
+# Production
+cd terraform/production
+terraform init -backend-config=backend.production.hcl
 terraform destroy
 ```
