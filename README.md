@@ -54,12 +54,9 @@ git push → GitHub Actions → docker build → ECR push
 
 ### How the image is built
 
-The `Dockerfile` uses a two-stage build to keep the final image small and secure:
+The `Dockerfile` is a single-stage build on `node:20-alpine`. The app has no npm dependencies (uses only Node's built-in `http` module), so no install step is needed. Files are owned by a non-root user for security.
 
-| Stage | Base | Purpose |
-|---|---|---|
-| `deps` | `node:20-alpine` | Install production dependencies only (`--omit=dev`) |
-| `runtime` | `node:20-alpine` | Copy deps + source, run as non-root user |
+When you add npm dependencies, restore the two-stage pattern: a `deps` stage that runs `npm ci --omit=dev`, and a `runtime` stage that copies `node_modules` from it.
 
 The `GIT_COMMIT` build arg is injected at CI time and surfaced by the server at `GET /`:
 
