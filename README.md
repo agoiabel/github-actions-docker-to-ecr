@@ -242,9 +242,20 @@ terraform output ecr_repository_url
 
 > Secrets are environment-specific. If you run both staging and production, add a separate secret set for each using GitHub's [Environments](https://docs.github.com/en/actions/deployment/targeting-different-deployment-environments) feature, or suffix the secret names (e.g. `AWS_ROLE_ARN_STAGING`, `AWS_ROLE_ARN_PRODUCTION`) and reference them explicitly in the workflow.
 
-### 3. Verify the setup
+### 3. Manually trigger a deployment
 
-Once secrets are added, push a commit to `main`. In the **Actions** tab you should see the workflow run and succeed. The pushed image will appear in the ECR console under the repository name printed by `terraform output ecr_repository_url`.
+The workflow supports manual runs without a code push. In the GitHub UI:
+
+1. Go to the **Actions** tab
+2. Select **"Build and Push to ECR"** in the left sidebar
+3. Click the **"Run workflow"** dropdown (top-right of the runs list)
+4. Choose a branch and click **"Run workflow"**
+
+This is useful for re-deploying the same commit, testing the pipeline, or deploying after a secrets/infrastructure change.
+
+### 4. Verify the setup
+
+Once secrets are added, push a commit to `main` or trigger the workflow manually. In the **Actions** tab you should see the workflow run and succeed. The pushed image will appear in the ECR console under the repository name printed by `terraform output ecr_repository_url`.
 
 ---
 

@@ -5,7 +5,9 @@ on:
     branches:
       - main
     paths:
-      - 'app/**'
+      - 'Dockerfile'
+      - 'server.js'
+      - 'package.json'
       - '.github/workflows/build-push.yml'
 
   workflow_dispatch:
@@ -75,8 +77,8 @@ jobs:
         id: build-push
         uses: docker/build-push-action@v5
         with:
-          context: ./app
-          file: ./app/Dockerfile
+          context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
