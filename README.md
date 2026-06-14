@@ -179,6 +179,39 @@ Add `github_actions_role_arn` as a GitHub Actions secret named `AWS_ROLE_ARN` an
 | `ecr_repository_url` | Full URL to push images to |
 | `github_actions_role_arn` | IAM role ARN — paste into your GitHub Actions secret |
 
+### Useful ECR commands
+
+`terraform output ecr_repository_url` returns the full registry URL (used by Docker). AWS CLI commands use only the **short repository name** — everything after the last `/`.
+
+```bash
+# Get the full URL
+cd terraform/staging && terraform output ecr_repository_url
+cd terraform/production && terraform output ecr_repository_url
+
+# List images — use the short name, not the full URL
+aws ecr list-images \
+  --repository-name ecr-demo-staging \
+  --region us-east-1 \
+  --output table
+
+aws ecr list-images \
+  --repository-name ecr-demo-production \
+  --region us-east-1 \
+  --output table
+
+# Describe a specific image by tag
+aws ecr describe-images \
+  --repository-name ecr-demo-staging \
+  --image-ids imageTag=latest \
+  --region us-east-1
+
+# Delete an image by tag
+aws ecr batch-delete-image \
+  --repository-name ecr-demo-staging \
+  --image-ids imageTag=sha-abc1234 \
+  --region us-east-1
+```
+
 ---
 
 ## Environments
